@@ -24,6 +24,7 @@ from ur_driver.deserializeRT import RobotStateRT
 
 from ur_msgs.srv import SetPayload, SetIO
 from ur_msgs.msg import *
+from std_srvs.srv import Empty
 
 # renaming classes
 DigitalIn = Digital
@@ -39,7 +40,7 @@ prevent_programming = False
 # q_actual = q_from_driver + offset
 joint_offsets = {}
 
-PORT=30002       # 10 Hz, RobotState 
+PORT=30002       # 10 Hz, RobotState
 RT_PORT=30003    #125 Hz, RobotStateRT
 DEFAULT_REVERSE_PORT = 50001     #125 Hz, custom data (from prog)
 
@@ -57,6 +58,7 @@ MSG_GET_IO = 11
 MSG_SET_FLAG = 12
 MSG_SET_TOOL_VOLTAGE = 13
 MSG_SET_ANALOG_OUT = 14
+MSG_MOVEL = 15
 MULT_payload = 1000.0
 MULT_wrench = 10000.0
 MULT_jointstate = 10000.0
@@ -88,7 +90,7 @@ JOINT_NAMES = ['shoulder_pan_joint', 'shoulder_lift_joint', 'elbow_joint',
 Q1 = [2.2,0,-1.57,0,0,0]
 Q2 = [1.5,0,-1.57,0,0,0]
 Q3 = [1.5,-0.2,-1.57,0,0,0]
-  
+
 
 connected_robot = None
 connected_robot_lock = threading.Lock()
@@ -122,15 +124,15 @@ RESET_PROGRAM = '''def resetProg():
 end
 '''
 #RESET_PROGRAM = ''
-    
+
 class URConnection(object):
     TIMEOUT = 1.0
-    
+
     DISCONNECTED = 0
     CONNECTED = 1
     READY_TO_PROGRAM = 2
     EXECUTING = 3
-    
+
     def __init__(self, hostname, port, program):
         self.__thread = None
         self.__sock = None
@@ -164,7 +166,7 @@ class URConnection(object):
     def send_reset_program(self):
         self.__sock.sendall(RESET_PROGRAM)
         self.robot_state = self.READY_TO_PROGRAM
-        
+
     def disconnect(self):
         if self.__thread:
             self.__keep_running = False
@@ -198,18 +200,18 @@ class URConnection(object):
             rospy.logfatal("Real robot is no longer enabled.  Driver is fuxored")
             time.sleep(2)
             sys.exit(1)
-        
+
         ###
         # IO-Support is EXPERIMENTAL
-        # 
-        # Notes: 
+        #
+        # Notes:
         # - Where are the flags coming from? Do we need flags? No, as 'prog' does not use them and other scripts are not running!
         # - analog_input2 and analog_input3 are within ToolData
         # - What to do with the different analog_input/output_range/domain?
         # - Shall we have appropriate ur_msgs definitions in order to reflect MasterboardData, ToolData,...?
         ###
-        
-        # Use information from the robot state packet to publish IOStates        
+
+        # Use information from the robot state packet to publish IOStates
         msg = IOStates()
         #gets digital in states
         for i in range(0, 10):
@@ -222,16 +224,16 @@ class URConnection(object):
         msg.analog_in_states.append(Analog(0, inp))
         #gets analog_in[1] state
         inp = state.masterboard_data.analog_input1 / MULT_analog_robotstate
-        msg.analog_in_states.append(Analog(1, inp))      
+        msg.analog_in_states.append(Analog(1, inp))
         #gets analog_out[0] state
         inp = state.masterboard_data.analog_output0 / MULT_analog_robotstate
-        msg.analog_out_states.append(Analog(0, inp))     
+        msg.analog_out_states.append(Analog(0, inp))
         #gets analog_out[1] state
         inp = state.masterboard_data.analog_output1 / MULT_analog_robotstate
-        msg.analog_out_states.append(Analog(1, inp))     
+        msg.analog_out_states.append(Analog(1, inp))
         #print "Publish IO-Data from robot state data"
         pub_io_states.publish(msg)
-        
+
 
         # Updates the state machine that determines whether we can program the robot.
         can_execute = (state.robot_mode_data.robot_mode in [RobotMode.READY, RobotMode.RUNNING])
@@ -283,7 +285,7 @@ class URConnection(object):
                 else:
                     self.__trigger_disconnected()
                     self.__keep_running = False
-                    
+
             else:
                 self.__trigger_disconnected()
                 self.__keep_running = False
@@ -291,10 +293,10 @@ class URConnection(object):
 
 class URConnectionRT(object):
     TIMEOUT = 1.0
-    
+
     DISCONNECTED = 0
     CONNECTED = 1
-    
+
     def __init__(self, hostname, port):
         self.__thread = None
         self.__sock = None
@@ -313,7 +315,7 @@ class URConnectionRT(object):
         self.__thread = threading.Thread(name="URConnectionRT", target=self.__run)
         self.__thread.daemon = True
         self.__thread.start()
-        
+
     def disconnect(self):
         if self.__thread:
             self.__keep_running = False
@@ -334,7 +336,7 @@ class URConnectionRT(object):
         now = rospy.get_rostime()
         stateRT = RobotStateRT.unpack(buf)
         self.last_stateRT = stateRT
-        
+
         msg = JointState()
         msg.header.stamp = now
         msg.header.frame_id = "From real-time state data"
@@ -347,7 +349,7 @@ class URConnectionRT(object):
         pub_joint_states.publish(msg)
         with last_joint_states_lock:
             last_joint_states = msg
-        
+
         wrench_msg = WrenchStamped()
         wrench_msg.header.stamp = now
         wrench_msg.wrench.force.x = stateRT.tcp_force[0]
@@ -357,7 +359,7 @@ class URConnectionRT(object):
         wrench_msg.wrench.torque.y = stateRT.tcp_force[4]
         wrench_msg.wrench.torque.z = stateRT.tcp_force[5]
         pub_wrench.publish(wrench_msg)
-        
+
 
     def __run(self):
         while self.__keep_running:
@@ -366,7 +368,7 @@ class URConnectionRT(object):
                 more = self.__sock.recv(4096)
                 if more:
                     self.__buf = self.__buf + more
-                    
+
                     #unpack_from requires a buffer of at least 48 bytes
                     while len(self.__buf) >= 48:
                         # Attempts to extract a packet
@@ -380,7 +382,7 @@ class URConnectionRT(object):
                 else:
                     self.__trigger_disconnected()
                     self.__keep_running = False
-                    
+
             else:
                 self.__trigger_disconnected()
                 self.__keep_running = False
@@ -448,7 +450,7 @@ class CommanderTCPHandler(SocketServer.BaseRequestHandler):
                             raise Exception("Probably forgot to terminate a string: %s..." % buf[:150])
                     s, buf = buf[:i], buf[i+1:]
                     log("Out: %s" % s)
-                
+
                 elif mtype == MSG_QUIT:
                     print "Quitting"
                     raise EOF("Received quit")
@@ -482,7 +484,7 @@ class CommanderTCPHandler(SocketServer.BaseRequestHandler):
         buf = struct.pack("!%ii" % len(params), *params)
         with self.socket_lock:
             self.request.send(buf)
-        
+
     #Experimental set_payload implementation
     def send_payload(self,payload):
         buf = struct.pack('!ii', MSG_SET_PAYLOAD, payload * MULT_payload)
@@ -497,7 +499,7 @@ class CommanderTCPHandler(SocketServer.BaseRequestHandler):
         buf = struct.pack("!%ii" % len(params), *params)
         #print params
         with self.socket_lock:
-            self.request.send(buf) 
+            self.request.send(buf)
         time.sleep(IO_SLEEP_TIME)
 
     def set_analog_out(self, pinnum, value):
@@ -507,7 +509,7 @@ class CommanderTCPHandler(SocketServer.BaseRequestHandler):
         buf = struct.pack("!%ii" % len(params), *params)
         #print params
         with self.socket_lock:
-            self.request.send(buf) 
+            self.request.send(buf)
         time.sleep(IO_SLEEP_TIME)
 
     def set_tool_voltage(self, value):
@@ -517,7 +519,7 @@ class CommanderTCPHandler(SocketServer.BaseRequestHandler):
         buf = struct.pack("!%ii" % len(params), *params)
         #print params
         with self.socket_lock:
-            self.request.send(buf) 
+            self.request.send(buf)
         time.sleep(IO_SLEEP_TIME)
 
     def set_flag(self, pin, val):
@@ -527,7 +529,7 @@ class CommanderTCPHandler(SocketServer.BaseRequestHandler):
         buf = struct.pack("!%ii" % len(params), *params)
         #print params
         with self.socket_lock:
-            self.request.send(buf) 
+            self.request.send(buf)
         #set_flag will fail if called too closely together--added delay
         time.sleep(IO_SLEEP_TIME)
 
@@ -542,7 +544,7 @@ class CommanderTCPHandler(SocketServer.BaseRequestHandler):
     def get_joint_states(self):
         global last_joint_states, last_joint_states_lock
         return last_joint_states
-    
+
 
 class TCPServer(SocketServer.TCPServer):
     allow_reuse_address = True  # Allows the program to restart gracefully on crash
@@ -603,7 +605,7 @@ def sample_traj(traj, t):
     # Last point
     if t >= traj.points[-1].time_from_start.to_sec():
         return copy.deepcopy(traj.points[-1])
-    
+
     # Finds the (middle) segment containing t
     i = 0
     while traj.points[i+1].time_from_start.to_sec() < t:
@@ -619,7 +621,7 @@ def traj_is_finite(traj):
             if math.isinf(v) or math.isnan(v):
                 return False
     return True
-        
+
 def has_limited_velocities(traj):
     for p in traj.points:
         for v in p.velocities:
@@ -651,12 +653,86 @@ class URServiceProvider(object):
         if req.payload < min_payload or req.payload > max_payload:
             print 'ERROR: Payload ' + str(req.payload) + ' out of bounds (' + str(min_payload) + ', ' + str(max_payload) + ')'
             return False
-        
+
         if self.robot:
             self.robot.send_payload(req.payload)
         else:
             return False
         return True
+
+class URCartTrajectory(object):
+    def __init__(self, robot):
+        self.robot = robot
+        self.server = actionlib.SimpleActionServer("follow_cart_trajectory",
+                                             FollowCartesianTrajectoryAction,
+                                             execute_cb=self.execute_cb, auto_start=False)
+        self.goal_handle = None
+        self.cart_traj = None
+
+    def set_robot(self, robot):
+        # Cancels any goals in progress
+        if self.goal_handle:
+            self.goal_handle.set_canceled()
+            self.goal_handle = None
+        self.robot = robot
+
+    def start(self):
+        self.server.start()
+        print "The cartesian action server for this driver has been started"
+
+    def execute_cb(self, goal_handle):
+        log("on_goal")
+        self.cart_traj = goal_handle
+        print "Trigger_movel"
+        for pose in self.cart_traj.poses:
+            rot = self.quaternion2axisangle(pose.orientation)
+            params = [MSG_MOVEL] + \
+                     [MULT_jointstate * pose.position.x] + \
+                     [MULT_jointstate * pose.position.y] + \
+                     [MULT_jointstate * pose.position.z] + \
+                     [MULT_jointstate * rot[0]] + \
+                     [MULT_jointstate * rot[1]] + \
+                     [MULT_jointstate * rot[2]]
+            buf = struct.pack("!%ii" % len(params), *params)
+            print params
+            with self.robot.socket_lock:
+                self.robot.request.send(buf)
+            time.sleep(IO_SLEEP_TIME)
+            print "Finished trajectory point"
+        rospy.loginfo('Succeeded')
+        self.server.set_succeeded(FollowCartesianTrajectoryResult())
+
+    #Taken from http://stackoverflow.com/questions/4870393/rotating-coordinate-system-via-a-quaternion
+    def normalize(self, v, tolerance=0.00001):
+        mag2 = sum(n * n for n in v)
+        if abs(mag2 - 1.0) > tolerance:
+            mag = math.sqrt(mag2)
+            v = tuple(n / mag for n in v)
+        return v
+
+    def quaternion2axisangle(self, quat):
+        w = quat.w
+        v = [quat.x, quat.y, quat.z]
+        theta = math.acos(w) * 2.0
+        nv = self.normalize(v)
+        return [nv[0] * theta, nv[1] * theta, nv[2] * theta]
+
+    #Not used yet
+    def axisangle2quaternion(self, rx, ry, rz):
+        import numpy
+        v = [rx, ry, rz]
+        theta = numpy.linalg.norm(numpy.array([rx, ry, rz]), ord=1)
+        print v, theta
+        v = self.normalize(v)
+        x, y, z = v
+        theta /= 2
+        w = math.cos(theta)
+        x = x * math.sin(theta)
+        y = y * math.sin(theta)
+        z = z * math.sin(theta)
+        print x, y, z, w
+
+
 
 class URTrajectoryFollower(object):
     RATE = 0.02
@@ -733,7 +809,7 @@ class URTrajectoryFollower(object):
             rospy.logerr("Received a goal with infinites or NaNs")
             goal_handle.set_rejected(text="Received a goal with infinites or NaNs")
             return
-        
+
         # Checks that the trajectory has velocities
         if not has_velocities(goal_handle.get_goal().trajectory):
             rospy.logerr("Received a goal without velocities")
@@ -749,7 +825,7 @@ class URTrajectoryFollower(object):
 
         # Orders the joints of the trajectory according to joint_names
         reorder_traj_joints(goal_handle.get_goal().trajectory, joint_names)
-                
+
         with self.following_lock:
             if self.goal_handle:
                 # Cancels the existing goal
@@ -786,7 +862,7 @@ class URTrajectoryFollower(object):
                 self.traj = JointTrajectory()
                 self.traj.joint_names = joint_names
                 self.traj.points = [point0, point1]
-                
+
                 self.goal_handle.set_canceled()
                 self.goal_handle = None
         else:
@@ -803,7 +879,7 @@ class URTrajectoryFollower(object):
                     self.robot.send_servoj(999, setpoint.positions, 4 * self.RATE)
                 except socket.error:
                     pass
-                    
+
             elif not self.last_point_sent:
                 # All intermediate points sent, sending last point to make sure we
                 # reach the goal.
@@ -827,7 +903,7 @@ class URTrajectoryFollower(object):
                     self.last_point_sent = True
                 except socket.error:
                     pass
-                    
+
             else:  # Off the end
                 if self.goal_handle:
                     last_point = self.traj.points[-1]
@@ -947,9 +1023,9 @@ def main():
     # Reads the maximum velocity
     # The max_velocity parameter is only used for debugging in the ur_driver. It's not related to actual velocity limits
     global max_velocity
-    max_velocity = rospy.get_param("~max_velocity", MAX_VELOCITY) # [rad/s] 
+    max_velocity = rospy.get_param("~max_velocity", MAX_VELOCITY) # [rad/s]
     rospy.loginfo("Max velocity accepted by ur_driver: %s [rad/s]" % max_velocity)
-    
+
     # Reads the minimum payload
     global min_payload
     min_payload = rospy.get_param("~min_payload", MIN_PAYLOAD)
@@ -957,7 +1033,7 @@ def main():
     global max_payload
     max_payload = rospy.get_param("~max_payload", MAX_PAYLOAD)
     rospy.loginfo("Bounds for Payload: [%s, %s]" % (min_payload, max_payload))
-    
+
 
     # Sets up the server for the robot to connect to
     server = TCPServer(("", reverse_port), CommanderTCPHandler)
@@ -970,14 +1046,15 @@ def main():
     connection = URConnection(robot_hostname, PORT, program)
     connection.connect()
     connection.send_reset_program()
-    
+
     connectionRT = URConnectionRT(robot_hostname, RT_PORT)
     connectionRT.connect()
-    
+
     set_io_server()
-    
+
     service_provider = None
     action_server = None
+    action_server_cart = None
     try:
         while not rospy.is_shutdown():
             # Checks for disconnect
@@ -991,6 +1068,8 @@ def main():
                 print "Disconnected.  Reconnecting"
                 if action_server:
                     action_server.set_robot(None)
+                if action_server_cart:
+                    action_server_cart.set_robot(None)
 
                 rospy.loginfo("Programming the robot")
                 while True:
@@ -1011,12 +1090,18 @@ def main():
                     service_provider.set_robot(r)
                 else:
                     service_provider = URServiceProvider(r)
-                
+
                 if action_server:
                     action_server.set_robot(r)
                 else:
                     action_server = URTrajectoryFollower(r, rospy.Duration(1.0))
                     action_server.start()
+
+                if action_server_cart:
+                    action_server_cart.set_robot(r)
+                else:
+                    action_server_cart = URCartTrajectory(r)
+                    action_server_cart.start()
 
     except KeyboardInterrupt:
         try:

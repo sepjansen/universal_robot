@@ -4,7 +4,7 @@ project(ur_msgs)
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
-find_package(catkin REQUIRED COMPONENTS message_generation std_msgs)
+find_package(catkin REQUIRED COMPONENTS message_generation std_msgs geometry_msgs genmsg actionlib_msgs actionlib)
 
 
 ## Generate messages in the 'msg' folder
@@ -24,11 +24,15 @@ find_package(catkin REQUIRED COMPONENTS message_generation std_msgs)
    SetIO.srv
  )
 
+ add_action_files(DIRECTORY action FILES FollowCartesianTrajectory.action)
+
 
 ## Generate added messages and services with any dependencies listed here
  generate_messages(
    DEPENDENCIES
+   geometry_msgs
    std_msgs
+   actionlib_msgs
 )
 
 ###################################
