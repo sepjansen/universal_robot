@@ -11,10 +11,14 @@ import SocketServer
 
 import rospy
 import actionlib
+import tf
+import numpy
+from tf.transformations import *
+import tf_conversions.posemath as pm
 from sensor_msgs.msg import JointState
 from control_msgs.msg import FollowJointTrajectoryAction
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
-from geometry_msgs.msg import WrenchStamped
+from geometry_msgs.msg import WrenchStamped, PoseStamped
 
 from dynamic_reconfigure.server import Server
 from ur_driver.cfg import URDriverConfig
@@ -406,7 +410,7 @@ def getConnectedRobot(wait=False, timeout=-1):
 
 # Receives messages from the robot over the socket
 class CommanderTCPHandler(SocketServer.BaseRequestHandler):
-
+    waypoint_id = 0
     def recv_more(self):
         global last_joint_states, last_joint_states_lock
         while True:
@@ -457,7 +461,7 @@ class CommanderTCPHandler(SocketServer.BaseRequestHandler):
                 elif mtype == MSG_WAYPOINT_FINISHED:
                     while len(buf) < 4:
                         buf = buf + self.recv_more()
-                    waypoint_id = struct.unpack_from("!i", buf, 0)[0]
+                    self.waypoint_id = struct.unpack_from("!i", buf, 0)[0]
                     buf = buf[4:]
                     print "Waypoint finished (not handled)"
                 else:
@@ -668,6 +672,7 @@ class URCartTrajectory(object):
                                              execute_cb=self.execute_cb, auto_start=False)
         self.goal_handle = None
         self.cart_traj = None
+        self.tfl = tf.TransformListener()
 
     def set_robot(self, robot):
         # Cancels any goals in progress
@@ -685,11 +690,44 @@ class URCartTrajectory(object):
         self.cart_traj = goal_handle
         print "Trigger_movel"
         for pose in self.cart_traj.poses:
-            rot = self.quaternion2axisangle(pose.orientation)
+            if(goal_handle.header.frame_id == "ur_base_link"):
+                p_ur_bl = pose
+            else:
+                ps = PoseStamped()
+                ps.header = copy.deepcopy(goal_handle.header)
+                ps.pose = copy.deepcopy(pose)
+                ps_ur_bl = self.tfl.transformPose("ur_base_link", ps)
+                p_ur_bl = ps_ur_bl.pose
+
+            # (trans_ur_ee_ee, rot_ur_ee_ee) = self.tfl.lookupTransform("ur_ee_link", "ee_link", ps.header.stamp)
+            # rot_mat_ur_ee_ee   = tf.transformations.quaternion_matrix(rot_ur_ee_ee)
+            # rot_mat_ee_link    = tf.transformations.quaternion_matrix([p_ur_bl.orientation.x, p_ur_bl.orientation.y, p_ur_bl.orientation.z, p_ur_bl.orientation.w])
+            # rot_mat_ur_ee_bl = numpy.dot(rot_mat_ur_ee_ee, rot_mat_ee_link)
+            # rot_ur_ee_bl = tf.transformations.quaternion_from_matrix(rot_mat_ur_ee_bl)
+            # print rot_ur_ee_bl
+            # p_ur_bl.orientation.x = rot_ur_ee_bl[0]
+            # p_ur_bl.orientation.y = rot_ur_ee_bl[1]
+            # p_ur_bl.orientation.z = rot_ur_ee_bl[2]
+            # p_ur_bl.orientation.w = rot_ur_ee_bl[3]
+
+            input_pose = PoseStamped() #Pose to encode the rotation
+            q = quaternion_from_euler(math.radians(-90.0),0,math.radians(-90.0)) # Rotate 30 degrees around z
+            input_pose.pose.orientation.x = q[0]
+            input_pose.pose.orientation.y = q[1]
+            input_pose.pose.orientation.z = q[2]
+            input_pose.pose.orientation.w = q[3]
+
+            m_ee = pm.toMatrix( pm.fromMsg(p_ur_bl) )
+            m_rot = pm.toMatrix( pm.fromMsg(input_pose.pose) )
+            final_pose = pm.toMsg( pm.fromMatrix(numpy.dot(m_ee,m_rot)) )
+
+
+            #rot = self.quaternion2axisangle(p_ur_bl.orientation)
+            rot = self.quaternion2axisangle(final_pose.orientation)
             params = [MSG_MOVEL] + \
-                     [MULT_jointstate * pose.position.x] + \
-                     [MULT_jointstate * pose.position.y] + \
-                     [MULT_jointstate * pose.position.z] + \
+                     [MULT_jointstate * p_ur_bl.position.x] + \
+                     [MULT_jointstate * p_ur_bl.position.y] + \
+                     [MULT_jointstate * p_ur_bl.position.z] + \
                      [MULT_jointstate * rot[0]] + \
                      [MULT_jointstate * rot[1]] + \
                      [MULT_jointstate * rot[2]]
@@ -697,7 +735,9 @@ class URCartTrajectory(object):
             print params
             with self.robot.socket_lock:
                 self.robot.request.send(buf)
-            time.sleep(IO_SLEEP_TIME)
+            while(self.robot.waypoint_id != 424):
+                time.sleep(IO_SLEEP_TIME)
+
             print "Finished trajectory point"
         rospy.loginfo('Succeeded')
         self.server.set_succeeded(FollowCartesianTrajectoryResult())
