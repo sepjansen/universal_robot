@@ -75,7 +75,7 @@ def driverProg():
 
       # Executes the command
       if do_brake:
-        #stopj(1.0)  # TODO
+        stopj(1.0)  # TODO
         send_out("Braking")
         sync()
       elif state == SERVO_RUNNING:

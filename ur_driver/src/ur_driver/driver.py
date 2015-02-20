@@ -463,7 +463,7 @@ class CommanderTCPHandler(SocketServer.BaseRequestHandler):
                         buf = buf + self.recv_more()
                     self.waypoint_id = struct.unpack_from("!i", buf, 0)[0]
                     buf = buf[4:]
-                    print "Waypoint finished (not handled)"
+                    print "Waypoint finished: ", self.waypoint_id
                 else:
                     raise Exception("Unknown message type: %i" % mtype)
 
@@ -737,7 +737,7 @@ class URCartTrajectory(object):
                 self.robot.request.send(buf)
             while(self.robot.waypoint_id != 424):
                 time.sleep(IO_SLEEP_TIME)
-
+            self.robot.waypoint_id = 0
             print "Finished trajectory point"
         rospy.loginfo('Succeeded')
         self.server.set_succeeded(FollowCartesianTrajectoryResult())
@@ -831,6 +831,8 @@ class URTrajectoryFollower(object):
 
     def on_goal(self, goal_handle):
         log("on_goal")
+        #print goal_handle.get_goal().trajectory.points
+        #print "=========="
 
         # Checks that the robot is connected
         if not self.robot:
@@ -866,6 +868,7 @@ class URTrajectoryFollower(object):
         # Orders the joints of the trajectory according to joint_names
         reorder_traj_joints(goal_handle.get_goal().trajectory, joint_names)
 
+
         with self.following_lock:
             if self.goal_handle:
                 # Cancels the existing goal
@@ -875,14 +878,19 @@ class URTrajectoryFollower(object):
 
             # Inserts the current setpoint at the head of the trajectory
             now = time.time()
-            point0 = sample_traj(self.traj, now)
+            point0 = sample_traj(self.traj, now - self.traj_t0)
             point0.time_from_start = rospy.Duration(0.0)
+            point0.positions = last_joint_states.position
             goal_handle.get_goal().trajectory.points.insert(0, point0)
+            self.traj = goal_handle.get_goal().trajectory
             self.traj_t0 = now
 
             # Replaces the goal
             self.goal_handle = goal_handle
-            self.traj = goal_handle.get_goal().trajectory
+            #print "self.traj:"
+            #print self.traj.points
+            #print "_________________________________________________________"
+
             self.goal_handle.set_accepted()
 
     def on_cancel(self, goal_handle):
@@ -1023,14 +1031,14 @@ def main():
     rospy.init_node('ur_driver', disable_signals=True)
     if rospy.get_param("use_sim_time", False):
         rospy.logwarn("use_sim_time is set!!!")
-    
+
     global prevent_programming
     prevent_programming = rospy.get_param("prevent_programming", False)
     reconfigure_srv = Server(URDriverConfig, reconfigure_callback)
     ## Still use parameter server?
     #update = URDriverConfig(prevent_programming)
     #reconfigure_srv.update_configuration(update)
-    
+
     prefix = rospy.get_param("~prefix", "")
     print "Setting prefix to %s" % prefix
     global joint_names
