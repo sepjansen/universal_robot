@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ros:Package xmi:version="2.0" xmlns:xmi="http://www.omg.org/XMI" xmlns:ros="http://ros/1.0" name="ur_driver" author="aub" author_email="aub@todo.todo" description="The ur_driver package" license="TODO">
+  <node name="ur_driver">
+    <publisher name="joint_states" msg="sensor_msgs::JointState"/>
+    <publisher name="wrench" msg="geometry_msgs::WrenchStamped"/>
+    <publisher name="io_states" msg="ur_msgs::IOStates"/>
+    <serviceServer name="set_io" msg="ur_msgs::SetIO"/>
+    <serviceServer name="setPayload" msg="ur_msgs::SetPayload"/>
+    <parameter name="prevent_programming" type="bool" value="False"/>
+    <parameter name="prefix" type="string"/>
+    <parameter name="max_velocity" type="double" value="10.0"/>
+    <parameter name="min_payload" type="double" value="0.0"/>
+    <parameter name="max_payload" type="double" value="1.0"/>
+    <actionserver name="follow_joint_trajectory" ActionType="control_msgs::FollowJointTrajectory"/>
+    <actionserver name="follow_cart_trajectory" ActionType="ur_msgs::FollowCartesianTrajectory"/>
+  </node>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>ur_msgs</depend>
+  <depend>control_msgs</depend>
+</ros:Package>

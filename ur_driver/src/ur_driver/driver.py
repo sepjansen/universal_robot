@@ -339,6 +339,8 @@ class URConnectionRT(object):
         global last_joint_states, last_joint_states_lock
         now = rospy.get_rostime()
         stateRT = RobotStateRT.unpack(buf)
+        if(not stateRT.time):
+            return
         self.last_stateRT = stateRT
 
         msg = JointState()
@@ -686,18 +688,20 @@ class URCartTrajectory(object):
         print "The cartesian action server for this driver has been started"
 
     def execute_cb(self, goal_handle):
-        log("on_goal")
+        log("ur_cart_as")
         self.cart_traj = goal_handle
-        print "Trigger_movel"
+        #print "Trigger_movel"
         for pose in self.cart_traj.poses:
             if(goal_handle.header.frame_id == "ur_base_link"):
                 p_ur_bl = pose
             else:
                 ps = PoseStamped()
                 ps.header = copy.deepcopy(goal_handle.header)
+                ps.header.stamp = rospy.Time(0)
                 ps.pose = copy.deepcopy(pose)
                 ps_ur_bl = self.tfl.transformPose("ur_base_link", ps)
                 p_ur_bl = ps_ur_bl.pose
+                #print p_ur_bl
 
             # (trans_ur_ee_ee, rot_ur_ee_ee) = self.tfl.lookupTransform("ur_ee_link", "ee_link", ps.header.stamp)
             # rot_mat_ur_ee_ee   = tf.transformations.quaternion_matrix(rot_ur_ee_ee)
@@ -720,11 +724,12 @@ class URCartTrajectory(object):
             m_ee = pm.toMatrix( pm.fromMsg(p_ur_bl) )
             m_rot = pm.toMatrix( pm.fromMsg(input_pose.pose) )
             final_pose = pm.toMsg( pm.fromMatrix(numpy.dot(m_ee,m_rot)) )
-
+            movel_speed = goal_handle.velocity
 
             #rot = self.quaternion2axisangle(p_ur_bl.orientation)
             rot = self.quaternion2axisangle(final_pose.orientation)
             params = [MSG_MOVEL] + \
+                     [MULT_jointstate * movel_speed] + \
                      [MULT_jointstate * p_ur_bl.position.x] + \
                      [MULT_jointstate * p_ur_bl.position.y] + \
                      [MULT_jointstate * p_ur_bl.position.z] + \
@@ -732,7 +737,7 @@ class URCartTrajectory(object):
                      [MULT_jointstate * rot[1]] + \
                      [MULT_jointstate * rot[2]]
             buf = struct.pack("!%ii" % len(params), *params)
-            print params
+            #print params
             with self.robot.socket_lock:
                 self.robot.request.send(buf)
             while(self.robot.waypoint_id != 424):
