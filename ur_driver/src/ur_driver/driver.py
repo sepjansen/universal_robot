@@ -696,6 +696,8 @@ class URCartTrajectory(object):
                 ps = PoseStamped()
                 ps.header = copy.deepcopy(goal_handle.header)
                 ps.pose = copy.deepcopy(pose)
+                
+                self.tfl.waitForTransform("/ur_base_link", ps.header, ps.stamp, rospy.Duration(4.0))
                 ps_ur_bl = self.tfl.transformPose("ur_base_link", ps)
                 p_ur_bl = ps_ur_bl.pose
 
