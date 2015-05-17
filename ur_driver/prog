@@ -229,7 +229,7 @@ def driverProg():
         #goal = [0.495, 0.22998, 0.15264, -0.3717, 0.72, -2.57]
         goal = p[params_movel[2] / MULT_jointstate, params_movel[3] / MULT_jointstate, params_movel[4] / MULT_jointstate, params_movel[5] / MULT_jointstate, params_movel[6] / MULT_jointstate, params_movel[7] / MULT_jointstate]
         send_out(goal)
-        movel(goal, a=1.2, v=movel_vel, t=0, r=0)
+        movel(goal, a=0.8, v=movel_vel, t=0, r=0)
         send_out("Finished MOVEL")
         send_waypoint_finished(424)
       else:
