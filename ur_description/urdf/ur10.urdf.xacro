@@ -83,11 +83,18 @@
         <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
       </xacro:cylinder_inertial>
     </link>
+    
+	<link name="${prefix}ur_base_link"/>
+    <joint name="${prefix}ur_base_joint" type="fixed">
+      <parent link="${prefix}base_link" />
+      <child link = "${prefix}ur_base_link" />
+      <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 -${pi}" />
+    </joint>
 
     <joint name="${prefix}shoulder_pan_joint" type="revolute">
-      <parent link="${prefix}base_link" />
+      <parent link="${prefix}ur_base_link" />
       <child link = "${prefix}shoulder_link" />
-      <origin xyz="0.0 0.0 ${shoulder_height}" rpy="0.0 0.0 0.0" />
+      <origin xyz="0.0 0.0 ${shoulder_height}" rpy="0.0 0.0 ${pi}" />
       <axis xyz="0 0 1" />
       <xacro:unless value="${joint_limited}">
         <limit lower="${-2.0 * pi}" upper="${2.0 * pi}" effort="330.0" velocity="2.16"/>
